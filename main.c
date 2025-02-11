@@ -1,13 +1,23 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <fcntl.h>
 #include <ctype.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <string.h>
 #include <unistd.h>
+#include <linux/input.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/prctl.h>
 
 char *description_message = "\
 	Simple Pomodoro Timer\n\
+	To list all currently running timers:\n\
+	`pomo -l`\n\
 	Pass flags to set length of the timer:\n\
 	-s for seconds\n\
 	-m for minutes\n\
@@ -20,10 +30,26 @@ char *description_message = "\
 	pomo -m 40 <This will sleep the thread for 40 minutes>\n\
 ";
 
-size_t is_valid_number(const char *arg) {
+void find_daemons() {
+    FILE *fp = popen("pgrep pomo_timer", "r");
+    if (!fp) {
+        perror("popen failed");
+        return;
+    }
+
+    char pid[16];
+    while (fgets(pid, sizeof(pid), fp)) {
+        printf("Found pomo_timer: PID = %s", pid);
+    }
+
+    pclose(fp);
+}
+
+size_t is_valid_number(const char *p_arg)
+{
 	char *endptr;
 	errno = 0;
-	size_t ret = strtol(arg, &endptr, 10);
+	size_t ret = strtol(p_arg, &endptr, 10);
 
 	if (errno != 0) {
 		perror("strtol");
@@ -37,17 +63,52 @@ size_t is_valid_number(const char *arg) {
 	return ret;
 }
 
-void print_time_remaining(size_t total_seconds) {
-	size_t hours = total_seconds / 3600;
-	size_t minutes = (total_seconds % 3600) / 60;
-	size_t seconds = total_seconds % 60;
+void print_time_remaining(size_t p_total_seconds)
+{
+	size_t hours = p_total_seconds / 3600;
+	size_t minutes = (p_total_seconds % 3600) / 60;
+	size_t seconds = p_total_seconds % 60;
 
-	printf("\r%02lu:%02lu:%02lu", hours, minutes, seconds);
+	printf("%02lu:%02lu:%02lu\n", hours, minutes, seconds);
 	fflush(stdout);
 }
 
-int main(int argc, char** argv) {
-	if (argc == 1) {
+int daemon_init(char* p_label, size_t p_label_size, size_t p_total_seconds) {
+	prctl(PR_SET_NAME, "pomo_timer", 0, 0, 0);
+
+	pid_t pid;
+	
+	if ((pid = fork()) < 0)
+		return (-1);
+	else if (pid != 0) {
+		exit(0);
+	}
+
+	setsid();
+	chdir("/");
+	umask(0);
+
+	while (p_total_seconds > 0) {
+		sleep(1);
+		p_total_seconds--;
+	}
+	char cmd[1000];
+	strcpy(cmd, "notify-send \"Timer went off: ");
+
+	if (p_label_size < 1)
+		strcat(cmd, "Unnamed");
+	else
+		strcat(cmd, p_label);
+	
+	strcat(cmd, "\"");
+	system(cmd);
+
+	return (0);
+}
+
+int main(int p_argc, char** p_argv)
+{
+	if (p_argc == 1) {
 		printf("%s\n", description_message);
 		return 0;
 	}
@@ -63,13 +124,19 @@ int main(int argc, char** argv) {
 	bool hours_flag = false;
 	char *hours_opt_value = NULL;
 	size_t hours_value = 0;
-
+	
+	bool label_flag = false;
+	char *label_opt_value = NULL;
+	size_t label_size = 0;
 	size_t c;
 
 	opterr = 0;
 
-	while ((c = getopt(argc, argv, "s:m:h:")) != -1) {
+	while ((c = getopt(p_argc, p_argv, "ls:m:h:n:")) != -1) {
 		switch (c) {
+		case 'l':
+			find_daemons();
+			return 0;
 		case 's':
 			seconds_flag = true;
 			seconds_opt_value = optarg;
@@ -94,8 +161,16 @@ int main(int argc, char** argv) {
 				return 1;
 			}
 			break;
+		case 'n':
+			label_flag = true;
+			label_opt_value = optarg;
+
+			if ((label_size = strlen(label_opt_value)) < 1) {
+				fprintf(stderr, "Option -l expects a value made up of at least one character");
+			} 
+			break;
 		case '?':
-			if (optopt == 's' || optopt == 'm' || optopt == 'h')
+			if (optopt == 's' || optopt == 'm' || optopt == 'h' || optopt == 'l')
 				fprintf(stderr, "Option -%c requires an argument.\n", optopt);
 			else if (isprint(optopt))
 				fprintf(stderr, "Unknown option -%c.\n", optopt);
@@ -114,16 +189,8 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	printf("Timer started! Counting down from:\n");
-
-	while (total_seconds > 0) {
-		print_time_remaining(total_seconds);
-		sleep(1);
-		total_seconds--;
-	}
-
-	printf("\rTime is up!\n");
-	system("notify-send 'Break time!'");
+	printf("Started timer\n");
+	daemon_init(label_opt_value,label_size, total_seconds);
 
 	return 0;
 }
