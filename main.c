@@ -17,7 +17,7 @@ char *description_message = "\
 	The program will sleep for the total summed duration, then notify you.\n\
 	\n\
 	EXAMPLE:\n\
-	pomo -m 40 <This will sleep the thead for 40 minutes>\n\
+	pomo -m 40 <This will sleep the thread for 40 minutes>\n\
 ";
 
 size_t is_valid_number(const char *arg) {
@@ -37,9 +37,19 @@ size_t is_valid_number(const char *arg) {
 	return ret;
 }
 
+void print_time_remaining(size_t total_seconds) {
+	size_t hours = total_seconds / 3600;
+	size_t minutes = (total_seconds % 3600) / 60;
+	size_t seconds = total_seconds % 60;
+
+	printf("\r%02lu:%02lu:%02lu", hours, minutes, seconds);
+	fflush(stdout);
+}
+
 int main(int argc, char** argv) {
 	if (argc == 1) {
 		printf("%s\n", description_message);
+		return 0;
 	}
 
 	bool seconds_flag = false;
@@ -54,20 +64,16 @@ int main(int argc, char** argv) {
 	char *hours_opt_value = NULL;
 	size_t hours_value = 0;
 
-	size_t index;
 	size_t c;
 
 	opterr = 0;
 
-	while ((c = getopt(argc, argv, "s:m:h:")) != -1)
-	{
-		switch (c)
-		{
+	while ((c = getopt(argc, argv, "s:m:h:")) != -1) {
+		switch (c) {
 		case 's':
 			seconds_flag = true;
 			seconds_opt_value = optarg;
-			if ((seconds_value = is_valid_number(seconds_opt_value)) == 0)
-			{
+			if ((seconds_value = is_valid_number(seconds_opt_value)) == 0) {
 				fprintf(stderr, "Option -s expects a value made up of digits not: %s", seconds_opt_value);
 				return 1;
 			}
@@ -75,8 +81,7 @@ int main(int argc, char** argv) {
 		case 'm':
 			minutes_flag = true;
 			minutes_opt_value = optarg;
-			if ((minutes_value = is_valid_number(minutes_opt_value)) == 0)
-			{
+			if ((minutes_value = is_valid_number(minutes_opt_value)) == 0) {
 				fprintf(stderr, "Option -m expects a value made up of digits not: %s", minutes_opt_value);
 				return 1;
 			}
@@ -84,39 +89,41 @@ int main(int argc, char** argv) {
 		case 'h':
 			hours_flag = true;
 			hours_opt_value = optarg;
-			if ((hours_value = is_valid_number(hours_opt_value)) == 0)
-			{
+			if ((hours_value = is_valid_number(hours_opt_value)) == 0) {
 				fprintf(stderr, "Option -h expects a value made up of digits not: %s", hours_opt_value);
 				return 1;
 			}
 			break;
 		case '?':
-			if (optopt == 's' && optopt == 'm' && optopt == 'h')
+			if (optopt == 's' || optopt == 'm' || optopt == 'h')
 				fprintf(stderr, "Option -%c requires an argument.\n", optopt);
-			else if (isprint (optopt))
+			else if (isprint(optopt))
 				fprintf(stderr, "Unknown option -%c.\n", optopt);
 			else
 				fprintf(stderr, "Unknown option character \\x%x.\n", optopt);
-
 			return 1;
 		default:
 			abort();
 		}
 	}
 
-	size_t total_seconds = 0;
+	size_t total_seconds = (hours_value * 3600) + (minutes_value * 60) + seconds_value;
 
-	if (seconds_flag)
-		total_seconds += seconds_value;
-	if (minutes_flag)
-		total_seconds += (minutes_value * 60);
-	if (hours_flag)
-		total_seconds += (hours_value * 60 * 60);
+	if (total_seconds == 0) {
+		fprintf(stderr, "Invalid duration. Timer must be at least 1 second.\n");
+		return 1;
+	}
 
-	printf("%lu\n", total_seconds);
-	
-	sleep(total_seconds);
-	system("notify-send break");
+	printf("Timer started! Counting down from:\n");
+
+	while (total_seconds > 0) {
+		print_time_remaining(total_seconds);
+		sleep(1);
+		total_seconds--;
+	}
+
+	printf("\rTime is up!\n");
+	system("notify-send 'Break time!'");
 
 	return 0;
 }
