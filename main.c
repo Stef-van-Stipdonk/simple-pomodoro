@@ -39,7 +39,7 @@ void find_daemons() {
 
     char pid[16];
     while (fgets(pid, sizeof(pid), fp)) {
-        printf("Found pomo_timer: PID = %s", pid);
+        printf("PID = %s", pid);
     }
 
     pclose(fp);
@@ -63,23 +63,13 @@ size_t is_valid_number(const char *p_arg)
 	return ret;
 }
 
-void print_time_remaining(size_t p_total_seconds)
-{
-	size_t hours = p_total_seconds / 3600;
-	size_t minutes = (p_total_seconds % 3600) / 60;
-	size_t seconds = p_total_seconds % 60;
-
-	printf("%02lu:%02lu:%02lu\n", hours, minutes, seconds);
-	fflush(stdout);
-}
-
 int daemon_init(char* p_label, size_t p_label_size, size_t p_total_seconds) {
 	prctl(PR_SET_NAME, "pomo_timer", 0, 0, 0);
 
 	pid_t pid;
-	
+
 	if ((pid = fork()) < 0)
-		return (-1);
+		return -1;
 	else if (pid != 0) {
 		exit(0);
 	}
@@ -92,18 +82,17 @@ int daemon_init(char* p_label, size_t p_label_size, size_t p_total_seconds) {
 		sleep(1);
 		p_total_seconds--;
 	}
+
 	char cmd[1000];
-	strcpy(cmd, "notify-send \"Timer went off: ");
 
 	if (p_label_size < 1)
-		strcat(cmd, "Unnamed");
+		sprintf(cmd, "notify-send \"Timer: %s\n\"", "generic");
 	else
-		strcat(cmd, p_label);
-	
-	strcat(cmd, "\"");
+		sprintf(cmd, "notify-send \"\nTimer: %s\n\"", p_label);
+
 	system(cmd);
 
-	return (0);
+	return 0;
 }
 
 int main(int p_argc, char** p_argv)
